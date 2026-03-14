@@ -53,17 +53,10 @@ def diffract(
         if method == "rs":
             uf[i] = np.sqrt(zf[i] / (2 * np.pi)) * np.trapezoid(
                 ui * (1j * k + 1 / r) * np.exp(-1j * k * r) / r**2,
-                xi,
-            )
+                xi)
         elif method == "fr":
-            uf[i] = (
-                np.sqrt(1j / lmbda / zf[i])
-                * np.exp(-1j * k * zf[i])
-                * np.trapezoid(
-                    ui * np.exp(-1j * k / 2 / zf[i] * (xi - xf[i]) ** 2),
-                    xi,
-                )
-            )
+            uf[i] = np.sqrt(1j / lmbda / zf[i]) * np.exp(-1j * k * zf[i]) * np.trapezoid(
+                ui * np.exp(-1j * k / 2 / zf[i] * (xi - xf[i]) ** 2), xi)
         else:
             raise ValueError("method must be 'rs' or 'fr'")
 
