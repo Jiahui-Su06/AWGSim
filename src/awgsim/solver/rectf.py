@@ -4,7 +4,7 @@ import numpy as np
 from .step import step
 
 
-def rect(x: ArrayLike) -> np.ndarray:
+def rectf(x: ArrayLike) -> np.ndarray:
     """Return the rectangular function evaluated at ``x``.
 
     The function is defined as::
