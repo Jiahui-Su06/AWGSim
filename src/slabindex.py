@@ -1,129 +1,94 @@
 import numpy as np
-from scipy.optimize import root_scalar
+import math
 from typing import Callable
+from scipy.optimize import root
 
 
 def slabindex(
     lambda0: float,
     t: float,
-    na: float | Callable[[float], float],
-    nc: float | Callable[[float], float],
-    ns: float | Callable[[float], float],
-    modes: int = np.inf,
+    na: float | Callable,
+    nc: float | Callable,
+    ns: float | Callable,
+    modes: int = 1000,
     polarisation: str = "TE"
 ) -> np.ndarray:
     """Solves for the TE (or TM) effective index of a 3-layer slab waveguide.
 
+    Description:
+        Solves for the TE (or TM) effective index of a 3-layer slab waveguide
+                na          y
+        ^   ----------      |
+        t       nc          x -- z
+        v   ----------     
+                ns
+        
+        with propagation in the +z direction
+
     Args:
         lambda0 (float): freespace wavelength
         t (float): core (guiding layer) thickness
-        na (float | Callable[[float], float]): cladding index
-        nc (float | Callable[[float], float]): core index
-        ns (float | Callable[[float], float]): substrate index
+        na (float | Callable): cladding index
+        nc (float | Callable): core index
+        ns (float | Callable): substrate index
         modes (int, optional): max number of modes to solve
         polarisation (str, optional): one of 'TE' or 'TM'
     
     Returns:
         np.ndarray: vector of indexes of each supported mode
+    
+    NOTE:
+        it is possible to provide a function of the form n = lambda lambda0: func(lambda0) 
+        for the refractive index which will be called using lambda0.
     """
+    neff = []
+
     if modes <= 0:
         raise ValueError("modes must be positive integer")
     if polarisation not in ("TE", "TM"):
         raise ValueError("polarisation must be one of 'TE' or 'TM'")
+    na = na(lambda0) if callable(na) else na
+    nc = nc(lambda0) if callable(nc) else nc
+    ns = ns(lambda0) if callable(ns) else ns
     
-    if callable(na):
-        na = float(na(lambda0))
-    if callable(nc):
-        nc = float(nc(lambda0))
-    if callable(ns):
-        ns = float(ns(lambda0))
-    
-    # No guided mode if core index is not highest
     if na >= nc or ns >= nc:
-        return np.array([])
+        return neff
     
     # TIR critical angle
-    theta_TIR = max(np.asin(ns / nc), np.asin(na / nc))
+    a0 = max(np.arcsin(ns/nc), np.arcsin(na/nc))
     
     if polarisation == "TE":
         # Fresnel reflection coefficients (E-mode)
-        def B1(theta):
-            return np.sqrt((ns / nc) ** 2 - np.sin(theta) ** 2 + 0j)
-        def r1(theta):
-            return (np.cos(theta) - B1(theta)) / (np.cos(theta) + B1(theta))
-        def B2(theta):
-            return np.sqrt((na / nc) ** 2 - np.sin(theta) ** 2 + 0j)
-        def r2(theta):
-            return (np.cos(theta) - B2(theta)) / (np.cos(theta) + B2(theta))
-    else: # TM
+        def B1(a):
+            return np.sqrt(((ns/nc)**2 - np.sin(a)**2) + 0j)
+        def r1(a):
+            return (np.cos(a) - B1(a)) / (np.cos(a) + B1(a))
+        def B2(a):
+            return np.sqrt(((na/nc)**2 - np.sin(a)**2) + 0j)
+    elif polarisation == "TM":
         # Fresnel reflection coefficients (H-mode)
-        def B1(theta):
-            return (nc / ns) ** 2 * np.sqrt((ns / nc) ** 2 - np.sin(theta) ** 2 + 0j)
-        def r1(theta):
-            return (np.cos(theta) - B1(theta)) / (np.cos(theta) + B1(theta))
-        def B2(theta):
-            return (nc / na) ** 2 * np.sqrt((na / nc) ** 2 - np.sin(theta) ** 2 + 0j)
-        def r2(theta):
-            return (np.cos(theta) - B2(theta)) / (np.cos(theta) + B2(theta))
+        def B1(a):
+            return (nc/ns)**2 * np.sqrt(((ns/nc)**2 - np.sin(a)**2) + 0j)
+        def r1(a):
+            return (np.cos(a) - B1(a)) / (np.cos(a) + B1(a))
+        def B2(a):
+            return (nc/na)**2 * np.sqrt(((na/nc)**2 - np.sin(a)**2) + 0j)
+    
+    def r2(a):
+            return (np.cos(a) - B2(a)) / (np.cos(a) + B2(a))
     
     # reflection phase shifts
-    def phi_1(theta):
-        return np.angle(r1(theta))
-    def phi_2(theta):
-        return np.angle(r2(theta))
-    def char_eq(theta, m): # characteristic equation
-        return (
-            4 * np.pi * t * nc / lambda0 * np.cos(theta)
-            + phi_1(theta)
-            + phi_2(theta)
-            - 2 * m * np.pi
-        )
+    def phi1(a):
+        return np.angle(r1(a))
+    def phi2(a):
+        return np.angle(r2(a))
     
     # number of supported modes
-    M = int(np.floor(
-        (4 * np.pi * t * nc / lambda0 * np.cos(theta_TIR) 
-         + phi_1(theta_TIR) 
-         + phi_2(theta_TIR)) 
-        / (2 * np.pi)
-    ))
+    M = math.floor((4*np.pi*t*nc/lambda0*np.cos(a0) + phi1(a0) + phi2(a0)) / (2*np.pi))
 
-    nmodes = max(0, int(min(modes, M + 1)))
-    if nmodes == 0:
-        return np.array([])
-    
-    neff = np.empty(nmodes)
-    eps = 1e-10
-    a = theta_TIR + eps
-    b = np.pi / 2 - eps
-
-    # solve the characteristic equation
-    for m in range(nmodes):
-        fa = char_eq(a, m)
-        fb = char_eq(b, m)
-
-        if np.real(fa) * np.real(fb) > 0:
-            # fallback: scan for a sign change
-            grid = np.linspace(a, b, 2000)
-            vals = np.real([char_eq(x, m) for x in grid])
-            idx = None
-            for i in range(len(vals) - 1):
-                if vals[i] == 0 or vals[i] * vals[i + 1] < 0:
-                    idx = i
-                    break
-            if idx is None:
-                raise RuntimeError(f"Failed to bracket root for mode m={m}")
-            left, right = grid[idx], grid[idx + 1]
-        else:
-            left, right = a, b
-        
-        sol = root_scalar(
-            lambda th: np.real(char_eq(th, m)),
-            bracket=[left, right],
-            method="brentq"
-        )
-        theta_sol = sol.root
-        neff[m] = nc * np.sin(theta_sol)
-    
+    for m in range(min(modes, M+1)):
+        a = root(lambda a : 4*np.pi*t*nc/lambda0*np.cos(a)+phi1(a)+phi2(a)-2*m*np.pi, 1)
+        neff.append((np.sin(a.x) * nc)[0])
     return neff
 
 

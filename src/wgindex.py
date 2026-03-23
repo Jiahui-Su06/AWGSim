@@ -1,6 +1,14 @@
 import modes as ms
 
 
+
+
+
+
+
+
+
+
 wavelength = 1.55       # 波长，单位 um
 width = 1.0            # 波导顶宽/定义宽度，单位 um
 thickness = 0.6        # 芯层厚度，单位 um
