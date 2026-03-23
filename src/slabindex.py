@@ -12,7 +12,7 @@ def slabindex(
     ns: float | Callable,
     modes: int = 1000,
     polarisation: str = "TE"
-) -> np.ndarray:
+) -> list:
     """Solves for the TE (or TM) effective index of a 3-layer slab waveguide.
 
     Description:
